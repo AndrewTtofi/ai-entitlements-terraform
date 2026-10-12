@@ -1,0 +1,86 @@
+name: plan
+# On a pull request that changes entitlements: run `terraform plan` against the real Okta
+# organisation and post who-gets-what and the plan as a comment, so the reviewer approves
+# the effect and not just the diff.
+#
+# No stored cloud key. The job asks GitHub for an OIDC token and trades it for the
+# read-only plan role (modules/github-oidc-aws); the Okta service app's private key is
+# read from AWS Secrets Manager with that role. Pull requests from forks get no token.
+#
+# Runs only once the repository variables below are set (see docs/runbook.md).
+on:
+  pull_request:
+    paths: ["entitlements/**", "modules/**", "envs/**"]
+
+permissions:
+  contents: read
+  id-token: write        # to ask GitHub for the OIDC token
+  pull-requests: write   # to post the plan
+
+concurrency:
+  group: plan-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TERRAFORM_VERSION: "1.16.5"
+
+jobs:
+  plan:
+    if: vars.AWS_PLAN_ROLE_ARN != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      TF_VAR_okta_org_name: ${{ vars.OKTA_ORG_NAME }}
+      TF_VAR_okta_client_id: ${{ vars.OKTA_CLIENT_ID }}
+      TF_VAR_scim_app_id: ${{ vars.OKTA_SCIM_APP_ID }}
+      TF_IN_AUTOMATION: "true"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with: { python-version: "3.12", cache: pip, cache-dependency-path: requirements-dev.txt }
+      - run: make install && make validate
+      - run: |
+          scripts/install_terraform.sh "$TERRAFORM_VERSION"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_PLAN_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: plan-pr-${{ github.event.number }}
+      - name: the Okta key, from Secrets Manager
+        run: |
+          key="$(aws secretsmanager get-secret-value --secret-id "$OKTA_SECRET_ARN" --query SecretString --output text)"
+          # Mask every line, then hand it to Terraform through the environment file.
+          while IFS= read -r line; do [ -n "$line" ] && echo "::add-mask::$line"; done <<< "$key"
+          { echo "TF_VAR_okta_private_key<<EOF_KEY"; echo "$key"; echo "EOF_KEY"; } >> "$GITHUB_ENV"
+        env:
+          OKTA_SECRET_ARN: ${{ vars.OKTA_SECRET_ARN }}
+      - name: plan
+        working-directory: envs/example
+        run: |
+          terraform init -input=false \
+            -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
+            -backend-config="key=ai-entitlements/terraform.tfstate" \
+            -backend-config="region=${{ vars.AWS_REGION }}"
+          # The plan role can't write the state, so it can't take the lock either.
+          terraform plan -input=false -lock=false -no-color -out=plan.out > /dev/null
+          terraform show -no-color plan.out > plan.txt
+      - name: comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo "## Entitlements: who gets what after this change"
+            echo
+            make -s summary
+            echo
+            echo "<details><summary>terraform plan</summary>"
+            echo
+            echo '```'
+            head -c 55000 envs/example/plan.txt   # a comment holds 65k characters
+            echo '```'
+            echo "</details>"
+          } > comment.md
+          gh pr comment "${{ github.event.number }}" --repo "$GITHUB_REPOSITORY" \
+            --edit-last --create-if-none --body-file comment.md

@@ -1,0 +1,59 @@
+name: apply
+# After a merge to main that changes entitlements: apply it.
+#
+# The job runs in the `production` environment. Protect that environment with required
+# reviewers and the apply waits for a person. The apply role's trust policy only accepts
+# tokens for that environment (modules/github-oidc-aws), so no other job, branch or
+# repository can assume it.
+on:
+  push:
+    branches: [main]
+    paths: ["entitlements/**", "modules/**", "envs/**"]
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency: { group: apply, cancel-in-progress: false }   # one apply at a time, never cut short
+
+env:
+  TERRAFORM_VERSION: "1.16.5"
+
+jobs:
+  apply:
+    if: vars.AWS_APPLY_ROLE_ARN != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    env:
+      TF_VAR_okta_org_name: ${{ vars.OKTA_ORG_NAME }}
+      TF_VAR_okta_client_id: ${{ vars.OKTA_CLIENT_ID }}
+      TF_VAR_scim_app_id: ${{ vars.OKTA_SCIM_APP_ID }}
+      TF_IN_AUTOMATION: "true"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - run: |
+          scripts/install_terraform.sh "$TERRAFORM_VERSION"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_APPLY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: apply-${{ github.sha }}
+      - name: the Okta key, from Secrets Manager
+        run: |
+          key="$(aws secretsmanager get-secret-value --secret-id "$OKTA_SECRET_ARN" --query SecretString --output text)"
+          while IFS= read -r line; do [ -n "$line" ] && echo "::add-mask::$line"; done <<< "$key"
+          { echo "TF_VAR_okta_private_key<<EOF_KEY"; echo "$key"; echo "EOF_KEY"; } >> "$GITHUB_ENV"
+        env:
+          OKTA_SECRET_ARN: ${{ vars.OKTA_SECRET_ARN }}
+      - name: apply
+        working-directory: envs/example
+        run: |
+          terraform init -input=false \
+            -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
+            -backend-config="key=ai-entitlements/terraform.tfstate" \
+            -backend-config="region=${{ vars.AWS_REGION }}" \
+            -backend-config="use_lockfile=true"
+          terraform apply -input=false -auto-approve -no-color

@@ -1,0 +1,42 @@
+name: ci
+on:
+  push: { branches: [main] }
+  pull_request:
+
+# Least privilege: the token can only read the repo. No secrets and no cloud access are
+# used here: the modules are tested against mock providers.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TERRAFORM_VERSION: "1.16.5"
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # Actions pinned to commit SHAs (a tag can be moved; a SHA can't). Dependabot bumps them.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with: { python-version: "3.12", cache: pip, cache-dependency-path: requirements-dev.txt }
+      - run: make install
+      - name: terraform, pinned and checksum-verified
+        run: |
+          scripts/install_terraform.sh "$TERRAFORM_VERSION"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - run: make lint
+      - name: the entitlements file is sound
+        run: make validate
+      - run: make test
+      - name: the modules, against mock providers
+        run: make tf-test
+      - name: lockfile matches requirements
+        run: make lock && git diff --exit-code -- requirements-dev.txt
+      - name: who gets what
+        run: make summary >> "$GITHUB_STEP_SUMMARY"
