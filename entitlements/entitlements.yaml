@@ -1,0 +1,60 @@
+# Who gets which AI tools: the single reviewed source. Terraform turns this file into
+# Okta groups, group rules, app assignments and token policies. Nobody edits those in the
+# Okta console; a change here is a pull request with the plan attached.
+#
+# `python -m tools.validate` checks it (CI runs that), and so do the module's own
+# variable validations.
+
+# What a tier grants: scopes on the AI gateway's tokens, and which apps are assigned.
+# `rank`: higher is more. Someone in two tiers gets the higher one.
+tiers:
+  dev:
+    rank: 1
+    description: Small models, no tools
+    scopes: [gateway.use]
+    apps: [ai-cli]
+  standard:
+    rank: 2
+    description: All models, and tools through the governed MCP server
+    scopes: [gateway.use, tools.use]
+    apps: [ai-cli, mcp-atlassian]
+
+# OAuth clients people sign in through. Both are public clients with PKCE: they run on a
+# user's machine and can't keep a secret.
+apps:
+  ai-cli:
+    label: AI CLI
+    redirect_uris: ["http://localhost:8765/callback"]
+  mcp-atlassian:
+    label: Jira and Confluence (MCP)
+    redirect_uris: ["http://localhost:8080/atlassian/signed-in", "http://localhost:33418/callback"]
+
+# One Okta group per team. Membership comes from a rule on a profile attribute (so HR
+# data drives it, and joiners, movers and leavers need no ticket), or, for a privileged
+# group, from a list of named people and never from a rule.
+teams:
+  eng-backend:
+    tier: standard
+    description: Backend engineering
+    rule: 'user.department == "Engineering" and user.division == "Backend"'
+  eng-platform:
+    tier: standard
+    description: Platform engineering
+    rule: 'user.department == "Engineering" and user.division == "Platform"'
+  trading-desk:
+    tier: standard
+    description: Trading desk
+    rule: 'user.department == "Trading"'
+  compliance:
+    tier: standard
+    description: Compliance
+    rule: 'user.department == "Compliance"'
+  everyone:
+    tier: dev
+    description: All employees
+    rule: 'user.userType == "Employee"'
+  platform-admin:
+    tier: standard
+    description: Approves AI spend exceptions; operates the AI platform
+    privileged: true
+    members: [alice.admin@example.com, bob.admin@example.com]
