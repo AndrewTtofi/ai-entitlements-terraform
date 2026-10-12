@@ -11,5 +11,7 @@ work="$(mktemp -d)"; trap 'rm -rf "$work"' EXIT
 curl -fsSL -o "$work/$zip" "$base/$zip"
 curl -fsSL -o "$work/sums" "$base/terraform_${version}_SHA256SUMS"
 (cd "$work" && grep " $zip\$" sums | sha256sum -c -)
-unzip -q -o "$work/$zip" terraform -d "${TERRAFORM_BIN:-$HOME/.local/bin}"
-"${TERRAFORM_BIN:-$HOME/.local/bin}/terraform" version | head -1
+bin="${TERRAFORM_BIN:-$HOME/.local/bin}"
+mkdir -p "$bin"
+unzip -q -o "$work/$zip" terraform -d "$bin"
+"$bin/terraform" version | head -1
