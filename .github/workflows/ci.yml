@@ -12,9 +12,6 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  TERRAFORM_VERSION: "1.16.5"
-
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -28,7 +25,7 @@ jobs:
       - run: make install
       - name: terraform, pinned and checksum-verified
         run: |
-          scripts/install_terraform.sh "$TERRAFORM_VERSION"
+          scripts/install_terraform.sh "$(cat .terraform-version)"   # the image reads the same file
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - run: make lint
       - name: the entitlements file is sound
@@ -40,3 +37,14 @@ jobs:
         run: make lock && git diff --exit-code -- requirements-dev.txt
       - name: who gets what
         run: make summary >> "$GITHUB_STEP_SUMMARY"
+
+  # The container as it ships: `docker compose up` runs every check, with no network.
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { persist-credentials: false }
+      - run: docker compose up --build --exit-code-from check
+      - name: who gets what, from the container
+        run: docker compose run --rm check make summary

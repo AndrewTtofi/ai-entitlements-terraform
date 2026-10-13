@@ -4,7 +4,12 @@
 #   scripts/install_terraform.sh 1.16.5
 set -euo pipefail
 version="${1:?usage: install_terraform.sh VERSION}"
-os="linux"; arch="amd64"
+os="linux"
+case "$(uname -m)" in
+  x86_64) arch="amd64" ;;
+  aarch64 | arm64) arch="arm64" ;;   # a container built on an Arm laptop
+  *) echo "unsupported architecture: $(uname -m)" >&2; exit 1 ;;
+esac
 base="https://releases.hashicorp.com/terraform/${version}"
 zip="terraform_${version}_${os}_${arch}.zip"
 work="$(mktemp -d)"; trap 'rm -rf "$work"' EXIT

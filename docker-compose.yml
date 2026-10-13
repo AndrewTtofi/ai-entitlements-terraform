@@ -1,0 +1,12 @@
+# `docker compose up` runs every check CI runs: lint, the entitlements file, the
+# validator's tests and the Terraform tests on mock providers. No credentials, and no
+# network once the image is built.
+#   docker compose run --rm check make summary     # who gets what, as a table
+services:
+  check:
+    build: .
+    volumes:
+      - ./entitlements:/srv/entitlements:ro   # edit the data file on the host, run again
+    network_mode: none
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
