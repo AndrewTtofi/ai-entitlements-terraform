@@ -16,9 +16,6 @@ permissions:
 
 concurrency: { group: apply, cancel-in-progress: false }   # one apply at a time, never cut short
 
-env:
-  TERRAFORM_VERSION: "1.16.5"
-
 jobs:
   apply:
     if: vars.AWS_APPLY_ROLE_ARN != ''
@@ -34,7 +31,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { persist-credentials: false }
       - run: |
-          scripts/install_terraform.sh "$TERRAFORM_VERSION"
+          scripts/install_terraform.sh "$(cat .terraform-version)"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:

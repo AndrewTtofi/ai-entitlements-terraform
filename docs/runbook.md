@@ -8,7 +8,8 @@ disagrees with reality.
 Every change is the same five steps:
 
 1. Edit `entitlements/entitlements.yaml` on a branch.
-2. `make check` (seconds; no credentials needed).
+2. `make check` (seconds; no credentials needed), or `docker compose up --build` for the
+   same checks without Terraform or Python installed.
 3. Open a pull request. CI validates the file; the `plan` workflow comments with the
    table of who gets what and the Terraform plan.
 4. A reviewer approves **the plan**, not only the diff.

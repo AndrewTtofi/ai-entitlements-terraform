@@ -96,6 +96,16 @@ make check       # lint, the data file, 23 validator tests, 22 Terraform tests o
 make summary     # who gets what
 ```
 
+Or with only Docker, and nothing installed:
+
+```bash
+docker compose up --build                       # the same checks, in a container with no network
+docker compose run --rm check make summary      # who gets what
+```
+
+The image holds the pinned Terraform and the providers; `entitlements/` is mounted from
+the host, so an edit is picked up by the next run.
+
 Try a change: give `everyone` the `standard` tier, or add a `rule` to `platform-admin`,
 and run `make check` again. The second is refused, twice: by the validator and by the
 module.
@@ -113,6 +123,7 @@ With a real organisation, see [the runbook](docs/runbook.md).
 | The AWS and Google federation | **Never applied.** The trust policies are asserted on as text; no token has been exchanged |
 | The `plan` and `apply` workflows | **Written, not exercised.** They skip themselves until the repository variables exist |
 | `ci.yml` | **Real**, runs on every pull request with no credentials |
+| The container | **Real**, built and run in CI. It runs the checks; it is not used by the `plan` and `apply` workflows, which install Terraform on the runner |
 
 ## Design decisions and trade-offs
 
@@ -149,6 +160,11 @@ secrets manager, read with the federated role. *Trade-off:* more to set up once.
 
 [The decision record](docs/decisions/0001-entitlements-as-data-applied-by-terraform.md)
 has the alternatives.
+
+**The checks run in a container that has no network.** The providers are copied into
+the image as a local mirror at build, so a run can't reach Okta, a cloud or the registry
+even by mistake, and it gives the same answer on any machine. *Trade-off:* the image is
+large, because the AWS and Google providers are, and a provider bump means a rebuild.
 
 ## Development
 
