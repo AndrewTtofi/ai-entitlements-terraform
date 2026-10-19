@@ -1,6 +1,6 @@
 # Everything `make check` needs, in one image: Python, the validator's dependencies, a
 # pinned Terraform and the providers. No Okta tenant, no cloud account, no credentials.
-FROM python:3.12-slim
+FROM python:3.14-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 \
     TF_IN_AUTOMATION=1 \
